@@ -58,9 +58,10 @@ contract BaseTest is Test {
     IERC20(_token).approve(spender, _amount);
   }
 
-  function calculateFillPrice(uint64 _startTime, uint64 _duration, uint128 _startPrice, uint128 _endPrice, uint64 _currentTime) public pure returns (uint128) {
+  function calculateAmountIn(uint128 _amountOut, uint64 _startTime, uint64 _duration, uint128 _startPrice, uint128 _endPrice, uint64 _currentTime, uint8 _decimals) public pure returns (uint128) {
     uint64 delta_t = _duration - (_currentTime - _startTime);
     uint128 delta_p = _startPrice - _endPrice;
-    return uint128(((delta_p * delta_t) / _duration) + _endPrice);
+    uint128 currentPrice = uint128(((delta_p * delta_t) / _duration) + _endPrice);
+    return uint128((_amountOut * currentPrice) / 10**_decimals);
   }
 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 import {ERC20} from "solady/src/tokens/ERC20.sol";
 import {OwnableRoles} from "solady/src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {console} from "forge-std/console.sol";
 interface IEthStrategy {
     function mint(address _to, uint256 _amount) external;
 }
@@ -15,7 +16,8 @@ contract DutchAuction is OwnableRoles {
     error AmountExceedsSupply();
     error InvalidDuration();
     error AmountStartPriceOverflow();
-    error FillAmountZero();
+    error AmountOutZero();
+    error AmountInZero();
     struct Auction {
         uint64 startTime;
         uint64 duration;
@@ -28,12 +30,13 @@ contract DutchAuction is OwnableRoles {
 
     address public immutable ethStrategy;
     address public immutable paymentToken;
-    uint8 constant decimals = 18;
+
+    uint8 public immutable decimals;
     uint64 public constant MAX_START_TIME_WINDOW = 7 days; 
     uint64 public constant MAX_DURATION = 30 days;
 
     event AuctionStarted(Auction auction);
-    event AuctionFilled(address buyer, uint128 amount, uint128 price);
+    event AuctionFilled(address buyer, uint128 amountOut, uint128 amountIn);
     event AuctionEndedEarly();
     event AuctionCancelled();
 
@@ -46,6 +49,7 @@ contract DutchAuction is OwnableRoles {
         ethStrategy = _ethStrategy;
         paymentToken = _paymentToken;
         _initializeOwner(_governor);
+        decimals = ERC20(_ethStrategy).decimals();
     }
 
     function startAuction(
@@ -56,6 +60,7 @@ contract DutchAuction is OwnableRoles {
         uint128 _amount
     ) public onlyOwnerOrRoles(ADMIN_ROLE) {
         uint64 currentTime = uint64(block.timestamp);
+        console.log("start time", _startTime, currentTime);
         if(_startTime == 0) {
           _startTime = currentTime;
         }
@@ -93,31 +98,36 @@ contract DutchAuction is OwnableRoles {
         emit AuctionCancelled();
     }
 
-    function fill(uint128 _amount) public {
+    function fill(uint128 _amountOut) public {
         Auction memory _auction = auction;
         uint256 currentTime = block.timestamp;
         if (!_isAuctionActive(_auction, currentTime)) {
             revert AuctionNotActive();
         }
-        if (_amount == 0) {
-            revert FillAmountZero();
+        if (_amountOut == 0) {
+            revert AmountOutZero();
         }
-        if (_amount > _auction.amount) {
+        if (_amountOut > _auction.amount) {
             revert AmountExceedsSupply();
         }
         uint128 currentPrice = _getCurrentPrice(_auction, currentTime);
-        uint128 delta_amount = _auction.amount - _amount;
+        uint128 delta_amount = _auction.amount - _amountOut;
         if(delta_amount > 0) {
             auction.amount = delta_amount;
         } else {
             delete auction;
             emit AuctionEndedEarly();
         }
-        _fill(_amount, currentPrice, _auction.startTime, _auction.duration);
+        uint128 amountIn = uint128((_amountOut * currentPrice) / 10**decimals);
+
+        if(amountIn == 0) {
+            revert AmountInZero();
+        }
+        emit AuctionFilled(msg.sender, _amountOut, amountIn);
+        _fill(_amountOut, amountIn, _auction.startTime, _auction.duration);
     }
 
-    function _fill(uint128 amount, uint128 price, uint64 startTime, uint64 duration) internal virtual {
-      emit AuctionFilled(msg.sender, amount, price);
+    function _fill(uint128 amountOut, uint128 amountIn, uint64, uint64) internal virtual {
     }
 
     function _isAuctionActive(

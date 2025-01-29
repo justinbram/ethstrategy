@@ -7,8 +7,8 @@ import {IEthStrategy} from "./DutchAuction.sol";
 contract BondAuction is DutchAuction {
 
     struct Bond {
-      uint128 amount;
-      uint128 price;
+      uint128 amountOut;
+      uint128 amountIn;
       uint64 startRedemption;
     }
 
@@ -22,15 +22,14 @@ contract BondAuction is DutchAuction {
 
     constructor(address _ethStrategy, address _governor, address _paymentToken) DutchAuction(_ethStrategy, _governor, _paymentToken) {}
 
-    function _fill(uint128 amount, uint128 price, uint64 startTime, uint64 duration) internal override {
-        super._fill(amount, price, startTime, duration);
+    function _fill(uint128 amountOut, uint128 amountIn, uint64 startTime, uint64 duration) internal override {
         if(bonds[msg.sender].startRedemption != 0) {
           revert UnredeemedBond();
         }
-        SafeTransferLib.safeTransferFrom(paymentToken, msg.sender, address(this), amount * price / 10**decimals);
+        SafeTransferLib.safeTransferFrom(paymentToken, msg.sender, address(this), amountIn);
         bonds[msg.sender] = Bond({
-          amount: amount,
-          price: price,
+          amountOut: amountOut,
+          amountIn: amountIn,
           startRedemption: startTime + duration
         });
     }
@@ -52,8 +51,8 @@ contract BondAuction is DutchAuction {
         revert RedemptionWindowPassed();
       }
       delete bonds[msg.sender];
-      SafeTransferLib.safeTransfer(paymentToken, owner(), bond.amount * bond.price / 10**decimals);
-      IEthStrategy(ethStrategy).mint(msg.sender, bond.amount);
+      SafeTransferLib.safeTransfer(paymentToken, owner(), bond.amountIn);
+      IEthStrategy(ethStrategy).mint(msg.sender, bond.amountOut);  
     }
 
     function withdraw() external {
@@ -69,7 +68,7 @@ contract BondAuction is DutchAuction {
       if(currentTime < bond.startRedemption) {
         revert RedemptionWindowNotStarted();
       }
-      SafeTransferLib.safeTransfer(paymentToken, msg.sender, bond.amount * bond.price / 10**decimals);
+      SafeTransferLib.safeTransfer(paymentToken, msg.sender, bond.amountIn);
       delete bonds[msg.sender];
     }
 }
